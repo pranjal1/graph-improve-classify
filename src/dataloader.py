@@ -66,4 +66,17 @@ class ResNetLoader(DataloaderInterface):
         return self.model(input_batch)
 
     def train_test_dataloader(self):
+        #TODO: Add code to get train and testing data loader
+        #first create graph code
+        # Ni -> Each node has embedding feature
+        # in each (N1, N2, N3, N4, ... Nn-1) -> equal num of nodes from each class is sampled
+        # figure out how to sample
+        # figure out how to create edges
+        # [
+        # {(N1, N2, N3, N4, ... Nn-1) U Nn},
+        # {(N1, N2, N3, N4, ... Nn-1) U Nn},
+        # {(N1, N2, N3, N4, ... Nn-1) U Nn},
+        #----------------------------------------
+        # {(N1, N2, N3, N4, ... Nn-1) U Nn},
+        # ] 
         pass
