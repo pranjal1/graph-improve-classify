@@ -1,14 +1,21 @@
+import os
+import pickle
 from PIL import Image
+
+import numpy as np
+from tqdm import tqdm
+from loguru import logger
 
 import torch
 import torch.nn as nn
 from torchvision import transforms
 import torchvision.models as models
+from torch_geometric.data import InMemoryDataset, Data
 
-from .interface import DataloaderInterface
+from .interface import EmbeddingInterface
 
 
-class ResNetLoader(DataloaderInterface):
+class ResNetLoader(EmbeddingInterface):
     def __init__(self, config):
         super().__init__()
         self.is_cuda_available = torch.cuda.is_available()
@@ -53,9 +60,7 @@ class ResNetLoader(DataloaderInterface):
         if isinstance(image, str):
             image = Image.open(image)
         input_batch = self.preprocess(image)
-        if is_single:
-            input_batch = input_batch.unsqueeze(0)
-
+        input_batch = input_batch.unsqueeze(0)
         return input_batch
 
     def get_embedding(self, input_batch):
@@ -65,18 +70,74 @@ class ResNetLoader(DataloaderInterface):
 
         return self.model(input_batch)
 
-    def train_test_dataloader(self):
-        #TODO: Add code to get train and testing data loader
-        #first create graph code
-        # Ni -> Each node has embedding feature
-        # in each (N1, N2, N3, N4, ... Nn-1) -> equal num of nodes from each class is sampled
-        # figure out how to sample
-        # figure out how to create edges
-        # [
-        # {(N1, N2, N3, N4, ... Nn-1) U Nn},
-        # {(N1, N2, N3, N4, ... Nn-1) U Nn},
-        # {(N1, N2, N3, N4, ... Nn-1) U Nn},
-        #----------------------------------------
-        # {(N1, N2, N3, N4, ... Nn-1) U Nn},
-        # ] 
-        pass
+
+class CifarDataset(InMemoryDataset):
+    def __init__(
+        self, root, config, transform=None, pre_transform=None, pre_filter=None,
+    ):
+        self.config = config
+        self.embedding = ResNetLoader(self.config)
+        super().__init__(
+            root=root,
+            transform=transform,
+            pre_transform=pre_transform,
+            pre_filter=pre_filter,
+        )
+        self.data, self.slices, self.num_embeddings = torch.load(
+            self.processed_paths[0]
+        )
+
+    @property
+    def raw_file_names(self):
+        logger.info("Required files check!")
+        return self.config.raw_files
+
+    @property
+    def processed_file_names(self):
+        return [
+            os.path.join(os.path.dirname("__path__"), "../", "tmp/cifar_processed.dat"),
+        ]
+
+    def download(self):
+        logger.error(
+            f"Can not find files {self.raw_paths}. Please check and place the files in correct path!"
+        )
+        raise FileNotFoundError
+
+    def unpickle(self, f):
+        with open(f, "rb") as fo:
+            dct = pickle.load(fo, encoding="bytes")
+        img_all = dct.get(b"data").reshape((-1, 3, 32, 32))
+        return (
+            [
+                Image.fromarray(np.uint8(np.transpose(x, axes=(1, 2, 0)))).convert(
+                    "RGB"
+                )
+                for x in img_all
+            ],
+            dct.get(b"labels"),
+        )
+
+    def process(self):
+        data_list = []
+
+        logger.info("Processing training dataset...")
+        lst_imgs, lst_labels = [], []
+        # return the 1st n-1 batches for training
+        for fi_path in self.config.raw_files:
+            i, l = self.unpickle(fi_path)
+            i = [
+                self.embedding.get_embedding(self.embedding.transform(x))
+                for x in tqdm(i[:100])
+            ]
+            lst_imgs.append(i)
+            lst_labels.extend(l)
+        data = np.row_stack(lst_imgs)
+        data, slices = self.collate(data)
+        torch.save((data, slices, lst_labels), self.processed_paths[0])
+        logger.info(f"Processed files saved as {self.processed_paths[0]}")
+
+
+if __name__ == "__main__":
+    o = CifarDataset(root="../tmp/")
+    print(o.data)
