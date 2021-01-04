@@ -25,7 +25,7 @@ class CustomDataset(Dataset):
         return self.embeddings.shape[0]
 
 
-class Net(torch.nn.Module):
+class Net:
     def __init__(
         self,
         num_classes,
@@ -34,22 +34,27 @@ class Net(torch.nn.Module):
         train_dataset,
         num_epochs=5,
         learning_rate=1e-3,
+        use_graph=True,
         seed=None,
     ):
-        super(Net, self).__init__()
         self.encoder_model = encoder_model
         self.sample_loader = self.get_encoding(sample_dataset, batch_size=64)
-        self.train_loader = self.get_encoding(train_dataset, batch_size=1, shuffle=True)
-        # make a model that predicts the edges between the nodes
-
-        self.edge_linear = torch.nn.Linear(
-            encoder_model.encoding_dimension, encoder_model.encoding_dimension
+        self.use_graph = use_graph
+        train_batch_size = 1 if use_graph else 64
+        self.train_loader = self.get_encoding(
+            train_dataset, batch_size=train_batch_size, shuffle=True
         )
 
-        self.gconv = GCNConv(
-            in_channels=encoder_model.encoding_dimension,
-            out_channels=encoder_model.encoding_dimension,
-        )
+        if self.use_graph:
+            # make a model that predicts the edges between the nodes
+            self.edge_linear = torch.nn.Linear(
+                encoder_model.encoding_dimension, encoder_model.encoding_dimension
+            )
+
+            self.gconv = GCNConv(
+                in_channels=encoder_model.encoding_dimension,
+                out_channels=encoder_model.encoding_dimension,
+            )
 
         self.denselayers = nn.Sequential(
             # nn.Flatten(), #already flattened
@@ -59,7 +64,7 @@ class Net(torch.nn.Module):
             nn.ReLU(),
             nn.Linear(16, num_classes),
             nn.ReLU(),
-            nn.Softmax(dim=0),
+            nn.Softmax(dim=1),
         )
         self.reset_loader()
         self.num_epochs = num_epochs
@@ -67,11 +72,14 @@ class Net(torch.nn.Module):
 
         self.criterion = nn.CrossEntropyLoss()
 
-        self.trainables = (
-            self.edge_linear.parameters()
-            + self.gconv.parameters()
-            + self.denselayers.parameters()
-        )
+        if not self.use_graph:
+            self.trainables = self.denselayers.parameters()
+        else:
+            self.trainables = [
+                {"params": self.edge_linear.parameters()},
+                {"params": self.gconv.parameters()},
+                {"params": self.denselayers.parameters()},
+            ]
 
         self.optimizer = torch.optim.Adam(
             self.trainables, lr=learning_rate, weight_decay=1e-5
@@ -79,7 +87,7 @@ class Net(torch.nn.Module):
         self.seed = seed
 
     def get_encoding(self, ds, batch_size, shuffle=False):
-        if not isinstance(ds, Dataset):
+        if not isinstance(ds, list):
             raise Exception(
                 f"The Dataset object is not valid. Got object of class {ds.__class__}."
             )
@@ -106,32 +114,35 @@ class Net(torch.nn.Module):
         self.sample_iterator = iter(self.sample_loader)
 
     def forward(self, x):
-        try:
-            sample_xs, _ = self.sample_iterator.__next__()
-        except StopIteration:
-            self.reset_loader()
-            sample_xs, _ = self.sample_iterator.__next__()
+        if self.use_graph:
+            try:
+                sample_xs, _ = self.sample_iterator.__next__()
+            except StopIteration:
+                self.reset_loader()
+                sample_xs, _ = self.sample_iterator.__next__()
 
-        sample_xs = self.edge_linear(sample_xs)
-        x = self.edge_linear(x)
-        edge_attr = F.softmax(torch.mul(sample_xs, x), dim=0)
-        node_features = torch.cat([sample_xs, x])
-        num_nodes = len(edge_attr)  # count start from 0
-        edges = torch.tensor(
-            [
-                [_ for _ in range(len(edge_attr))],
-                [num_nodes for _ in range(len(edge_attr))],
-            ],
-            dtype=torch.long,
-        )
-        # make graph
-        g = Data(x=node_features, edge_index=edges, edge_attr=edge_attr)
-        aggregated_x = F.elu(
-            self.gconv(x=g.x, edge_index=g.edge_index, edge_weight=g.edge_attr)
-        )
-        # isolate x's feature from the graph
-        aggregated_x = aggregated_x[-1, :]
-        pred = self.denselayers(aggregated_x)
+            sample_xs = self.edge_linear(sample_xs)
+            x = self.edge_linear(x)
+            edge_attr = F.softmax(torch.sum(torch.mul(sample_xs, x), axis=1), dim=0)
+            node_features = torch.cat([sample_xs, x])
+            num_nodes = len(edge_attr)  # count start from 0
+            edges = torch.tensor(
+                [
+                    [_ for _ in range(len(edge_attr))],
+                    [num_nodes for _ in range(len(edge_attr))],
+                ],
+                dtype=torch.long,
+            )
+            # make graph
+            g = Data(x=node_features, edge_index=edges, edge_attr=edge_attr)
+            aggregated_x = F.elu(
+                self.gconv(x=g.x, edge_index=g.edge_index, edge_weight=g.edge_attr)
+            )
+            # isolate x's feature from the graph
+            aggregated_x = aggregated_x[-1:, :]
+            pred = self.denselayers(aggregated_x)
+        else:
+            pred = self.denselayers(x)
         return pred
 
     def train(self):
