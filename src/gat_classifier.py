@@ -5,8 +5,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 
-from torch_geometric.data import Data
 from torch_geometric.nn.conv import GCNConv
+from torch_geometric.data import InMemoryDataset, Data
 
 
 class CustomDataset(Dataset):
@@ -34,13 +34,18 @@ class Net:
         train_dataset,
         num_epochs=5,
         learning_rate=1e-3,
+        train_batch_size=64,
+        samples_for_graph=32,
         use_graph=True,
         seed=None,
     ):
         self.encoder_model = encoder_model
-        self.sample_loader = self.get_encoding(sample_dataset, batch_size=64)
+        self.train_batch_size = train_batch_size
+        self.samples_for_graph = samples_for_graph
+        self.sample_loader = self.get_encoding(
+            sample_dataset, batch_size=self.train_batch_size * self.samples_for_graph
+        )
         self.use_graph = use_graph
-        train_batch_size = 1 if use_graph else 64
         self.train_loader = self.get_encoding(
             train_dataset, batch_size=train_batch_size, shuffle=True
         )
@@ -123,23 +128,38 @@ class Net:
 
             sample_xs = self.edge_linear(sample_xs)
             x = self.edge_linear(x)
-            edge_attr = F.softmax(torch.sum(torch.mul(sample_xs, x), axis=1), dim=0)
-            node_features = torch.cat([sample_xs, x])
-            num_nodes = len(edge_attr)  # count start from 0
-            edges = torch.tensor(
-                [
-                    [_ for _ in range(len(edge_attr))],
-                    [num_nodes for _ in range(len(edge_attr))],
-                ],
-                dtype=torch.long,
-            )
-            # make graph
-            g = Data(x=node_features, edge_index=edges, edge_attr=edge_attr)
+            all_graphs = []
+            for i in range(self.train_batch_size):
+                samples_per_x = sample_xs[
+                    i * self.samples_for_graph : (i + 1) * self.samples_for_graph
+                ]
+                one_x = x[i : i + 1]
+                edge_attr = F.softmax(
+                    torch.sum(torch.mul(samples_per_x, one_x), axis=1), dim=0
+                )
+                node_features = torch.cat([samples_per_x, one_x])
+                num_nodes = len(edge_attr)  # count start from 0
+                edges = torch.tensor(
+                    [
+                        [_ for _ in range(len(edge_attr))],
+                        [num_nodes for _ in range(len(edge_attr))],
+                    ],
+                    dtype=torch.long,
+                )
+                # make graph
+                g = Data(x=node_features, edge_index=edges, edge_attr=edge_attr)
+                all_graphs.append(g)
+            graph_data, slices = InMemoryDataset.collate(all_graphs)
             aggregated_x = F.elu(
-                self.gconv(x=g.x, edge_index=g.edge_index, edge_weight=g.edge_attr)
+                self.gconv(
+                    x=graph_data.x,
+                    edge_index=graph_data.edge_index,
+                    edge_weight=graph_data.edge_attr,
+                )
             )
             # isolate x's feature from the graph
-            aggregated_x = aggregated_x[-1:, :]
+            x_loc = [_ - 1 for _ in slices["x"][1:]]
+            aggregated_x = aggregated_x[x_loc]
             pred = self.denselayers(aggregated_x)
         else:
             pred = self.denselayers(x)
