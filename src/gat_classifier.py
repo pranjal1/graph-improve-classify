@@ -121,15 +121,14 @@ class Net:
     def forward(self, x):
         if self.use_graph:
             try:
-                sample_xs, _ = self.sample_iterator.__next__()
+                sample_xs, l_ = self.sample_iterator.__next__()
             except StopIteration:
                 self.reset_loader()
-                sample_xs, _ = self.sample_iterator.__next__()
-
+                sample_xs, l_ = self.sample_iterator.__next__()
             sample_xs = self.edge_linear(sample_xs)
             x = self.edge_linear(x)
             all_graphs = []
-            for i in range(self.train_batch_size):
+            for i in range(x.shape[0]):
                 samples_per_x = sample_xs[
                     i * self.samples_for_graph : (i + 1) * self.samples_for_graph
                 ]
@@ -159,7 +158,7 @@ class Net:
             )
             # isolate x's feature from the graph
             x_loc = [_ - 1 for _ in slices["x"][1:]]
-            aggregated_x = aggregated_x[x_loc]
+            aggregated_x = aggregated_x[x_loc, :]
             pred = self.denselayers(aggregated_x)
         else:
             pred = self.denselayers(x)
