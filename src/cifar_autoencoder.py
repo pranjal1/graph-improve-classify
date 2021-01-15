@@ -18,7 +18,7 @@ from torch.utils.data import Dataset, DataLoader
 
 
 class CifarDataSet(Dataset):
-    def __init__(self, batch_dir_path, train=True):
+    def __init__(self, batch_dir_path, mode="train"):
         super().__init__()
         if not os.path.isdir(batch_dir_path):
             raise Exception(f"{batch_dir_path} folder does not exist")
@@ -27,16 +27,23 @@ class CifarDataSet(Dataset):
             raise FileNotFoundError(f"No data_batch_n files found in {batch_dir_path}")
 
         lst_imgs, lst_labels = [], []
-        if train:
+        if mode == "train":
             # return the 1st n-1 batches for training
-            for fi_path in all_batch_files[:-1]:
+            for fi_path in all_batch_files[:-2]:
+                i, l = self.unpickle(fi_path)
+                lst_imgs.append(i)
+                lst_labels.extend(l)
+            self.data = np.row_stack(lst_imgs).reshape((-1, 3, 32, 32))
+            self.labels = lst_labels
+        elif mode=="sample":
+            # return the nth batch for testing
+            for fi_path in all_batch_files[-2:-1]:
                 i, l = self.unpickle(fi_path)
                 lst_imgs.append(i)
                 lst_labels.extend(l)
             self.data = np.row_stack(lst_imgs).reshape((-1, 3, 32, 32))
             self.labels = lst_labels
         else:
-            # return the nth batch for testing
             for fi_path in all_batch_files[-1:]:
                 i, l = self.unpickle(fi_path)
                 lst_imgs.append(i)
@@ -72,7 +79,6 @@ class CifarDataSet(Dataset):
 class AutoEncoder(nn.Module):
     def __init__(self):
         super(AutoEncoder, self).__init__()
-        keep_prob = 0.7
         self.encoding_dimension = 1024
         self.encoder_b1 = nn.Sequential(
             nn.Conv2d(in_channels=3, out_channels=64, kernel_size=3, padding=1),

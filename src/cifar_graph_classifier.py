@@ -8,6 +8,8 @@ from torch.utils.data import Dataset, DataLoader
 from torch_geometric.nn.conv import GCNConv
 from torch_geometric.data import InMemoryDataset, Data
 
+from .cifar_autoencoder import CifarDataSet
+
 
 class CustomDataset(Dataset):
     def __init__(self, embeddings, labels):
@@ -32,6 +34,7 @@ class Net:
         encoder_model,
         sample_dataset,
         train_dataset,
+        keep_prob=0.7,
         num_epochs=5,
         learning_rate=1e-3,
         train_batch_size=64,
@@ -40,6 +43,7 @@ class Net:
         seed=None,
     ):
         self.encoder_model = encoder_model
+        self.keep_prob = keep_prob
         self.train_batch_size = train_batch_size
         self.samples_for_graph = samples_for_graph
         self.sample_loader = self.get_encoding(
@@ -63,13 +67,23 @@ class Net:
 
         self.denselayers = nn.Sequential(
             # nn.Flatten(), #already flattened
-            nn.Linear(64, 128),
+            nn.Linear(in_features=1024, out_features=128),
             nn.ReLU(),
-            nn.Linear(128, 16),
+            nn.Dropout(p=self.keep_prob),
+            nn.BatchNorm1d(num_features=128),
+            nn.Linear(in_features=128, out_features=256),
             nn.ReLU(),
-            nn.Linear(16, num_classes),
+            nn.Dropout(p=self.keep_prob),
+            nn.BatchNorm1d(num_features=256),
+            nn.Linear(in_features=256, out_features=512),
             nn.ReLU(),
-            nn.Softmax(dim=1),
+            nn.Dropout(p=self.keep_prob),
+            nn.BatchNorm1d(num_features=512),
+            nn.Linear(in_features=512, out_features=1024),
+            nn.ReLU(),
+            nn.Dropout(p=self.keep_prob),
+            nn.BatchNorm1d(num_features=1024),
+            nn.Linear(in_features=1024, out_features=10),
         )
         self.reset_loader()
         self.num_epochs = num_epochs
@@ -92,7 +106,7 @@ class Net:
         self.seed = seed
 
     def get_encoding(self, ds, batch_size, shuffle=False):
-        if not isinstance(ds, list):
+        if not ds.__class__.__name__ == "CifarDataSet":
             raise Exception(
                 f"The Dataset object is not valid. Got object of class {ds.__class__}."
             )
