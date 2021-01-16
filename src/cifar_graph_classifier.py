@@ -1,4 +1,5 @@
 from tqdm import tqdm
+from loguru import logger
 
 import torch
 import torch.nn as nn
@@ -46,15 +47,18 @@ class Net:
         self.keep_prob = keep_prob
         self.train_batch_size = train_batch_size
         self.samples_for_graph = samples_for_graph
-        self.sample_loader = self.get_encoding(
-            sample_dataset, batch_size=self.train_batch_size * self.samples_for_graph
-        )
         self.use_graph = use_graph
+        logger.info("Computing the embedding for the train dataset")
         self.train_loader = self.get_encoding(
             train_dataset, batch_size=train_batch_size, shuffle=True
         )
 
         if self.use_graph:
+            logger.info("Will use graph to augment features")
+            logger.info("Computing the embedding for the sample dataset")
+            self.sample_loader = self.get_encoding(
+                sample_dataset, batch_size=self.train_batch_size * self.samples_for_graph
+            )
             # make a model that predicts the edges between the nodes
             self.edge_linear = torch.nn.Linear(
                 encoder_model.encoding_dimension, encoder_model.encoding_dimension
@@ -64,6 +68,9 @@ class Net:
                 in_channels=encoder_model.encoding_dimension,
                 out_channels=encoder_model.encoding_dimension,
             )
+            self.reset_loader()
+        else:
+            logger.info("Will not use graph to augment features")
 
         self.denselayers = nn.Sequential(
             # nn.Flatten(), #already flattened
@@ -85,7 +92,6 @@ class Net:
             nn.BatchNorm1d(num_features=1024),
             nn.Linear(in_features=1024, out_features=10),
         )
-        self.reset_loader()
         self.num_epochs = num_epochs
         self.learning_rate = learning_rate
 
@@ -114,7 +120,7 @@ class Net:
         _dl = DataLoader(ds, batch_size=64)
         _all_enc_embeddings = []
         _all_enc_labels = []
-        for data, label in _dl:
+        for data, label in tqdm(_dl):
             embedding = self.encoder_model.encoder(data).flatten(
                 start_dim=1
             )  # check if flatten will work
@@ -183,6 +189,7 @@ class Net:
             torch.manual_seed(self.seed)
         loss_info = []
         for epoch in range(self.num_epochs):
+            logger.info(f"Epoch {epoch+1} of {self.num_epochs}")
             epoch_loss = []
             for data in tqdm(self.train_loader):
                 img, label = data
