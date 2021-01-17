@@ -57,7 +57,8 @@ class Net:
             logger.info("Will use graph to augment features")
             logger.info("Computing the embedding for the sample dataset")
             self.sample_loader = self.get_encoding(
-                sample_dataset, batch_size=self.train_batch_size * self.samples_for_graph
+                sample_dataset,
+                batch_size=self.train_batch_size * self.samples_for_graph,
             )
             # make a model that predicts the edges between the nodes
             self.edge_linear = torch.nn.Linear(
@@ -184,6 +185,92 @@ class Net:
             pred = self.denselayers(x)
         return pred
 
+    def test_forward_run(self, x):
+        try:
+            sample_xs, l_ = self.sample_iterator.__next__()
+        except StopIteration:
+            self.reset_loader()
+            sample_xs, l_ = self.sample_iterator.__next__()
+        # assert x.shape[0] == 1
+        logger.info(f"x.shape = {x.shape}")
+        logger.info(f"x[:,:10] = {x[:,:10]}")
+        logger.info(f"sample_xs.shape = {sample_xs.shape}")
+        logger.info(f"sample_xs[:5,:10] = {sample_xs[:5,:10]}")
+        sample_xs = self.edge_linear(sample_xs)
+        x = self.edge_linear(x)
+        logger.info(f"Applying Linear Transformation")
+        logger.info(f"x[:,:10] = {x[:,:10]}")
+        logger.info(f"sample_xs[:5,:10] = {sample_xs[:5,:10]}")
+        all_graphs = []
+        for i in range(x.shape[0]):
+            samples_per_x = sample_xs[
+                i * self.samples_for_graph : (i + 1) * self.samples_for_graph
+            ]
+            one_x = x[i : i + 1]
+            logger.info(f"one_x.shape = {one_x.shape}")
+            logger.info(f"samples_per_x.shape = {samples_per_x.shape}")
+            logger.info(f"samples_per_x[:10] for current x = {samples_per_x[:,:10]}")
+            edge_attr = F.softmax(
+                torch.sum(torch.mul(samples_per_x, one_x), axis=1), dim=0
+            )
+            logger.info(
+                f"shape of edge attribute from one_x and sample_for_x = {edge_attr.shape}"
+            )
+            logger.info(f"edge attribute from one_x and sample_for_x = {edge_attr}")
+            node_features = torch.cat([samples_per_x, one_x])
+            logger.info(
+                f"node feature shape from concat of one_x and sample_for_x = {node_features.shape}"
+            )
+            logger.info(
+                f"node feature from concat of one_x and sample_for_x = {node_features}"
+            )
+            num_nodes = len(edge_attr)  # count start from 0
+            edges = torch.tensor(
+                [
+                    [_ for _ in range(len(edge_attr))],
+                    [num_nodes for _ in range(len(edge_attr))],
+                ],
+                dtype=torch.long,
+            )
+            logger.info(
+                f"shape of edges directed from sample_for_x to one_x = {edges.shape}"
+            )
+            logger.info(f"edges directed from sample_for_xs to one_x = {edges}")
+            # make graph
+            g = Data(x=node_features, edge_index=edges, edge_attr=edge_attr)
+            logger.info("Graph created from one_x and sample_for_x")
+            logger.info(f"graph.x.shape = {g.x.shape}")
+            logger.info(f"graph.edge_index.shape = {g.edge_index.shape}")
+            logger.info(f"graph.edge_attr.shape = {g.edge_attr.shape}")
+            all_graphs.append(g)
+        logger.info(
+            "Colleting graphs for multiple xs. Only one is used for sanity test."
+        )
+        graph_data, slices = InMemoryDataset.collate(all_graphs)
+        logger.info(f"Shape of collated graphs = {graph_data.x.shape}")
+        logger.info(f"Position of xs in collated graph = {slices}")
+        logger.info("Performing 1 graph conv followed by ReLU")
+        aggregated_x = F.elu(
+            self.gconv(
+                x=graph_data.x,
+                edge_index=graph_data.edge_index,
+                edge_weight=graph_data.edge_attr,
+            )
+        )
+        logger.info(f"Shape of graph xs after conv = {aggregated_x.shape}")
+        logger.info(f"graph xs after conv = {aggregated_x}")
+        # isolate x's feature from the graph
+        x_loc = [_ - 1 for _ in slices["x"][1:]]
+        logger.info("Isolating xs after graph conv")
+        aggregated_x = aggregated_x[x_loc, :]
+        logger.info(f"Shape of augmented x = {aggregated_x.shape}")
+        logger.info(f"augmented x = {aggregated_x}")
+        logger.info("Passing the augmented x through the dense layers")
+        self.denselayers.eval()
+        pred = self.denselayers(aggregated_x)
+        logger.info(f"Shape of prediction after dense layers = {pred.shape}")
+        logger.info(f"Prediction after dense layers = {pred}")
+
     def train(self):
         if self.seed:
             torch.manual_seed(self.seed)
@@ -203,3 +290,9 @@ class Net:
             # print("Epoch:{}, Loss:{:.4f}".format(epoch + 1, float(l)))
             # outputs.append((epoch, img, recon),)
         return loss_info
+
+    def sanity_test(self):
+        loss_info = []
+        imgs_batch, labels_batch = self.train_loader.__iter__().__next__()
+        img, label = imgs_batch[:1], labels_batch[:1]
+        recon = self.test_forward_run(img)
