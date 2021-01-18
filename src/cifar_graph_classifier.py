@@ -6,6 +6,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 
+import networkx as nx
+from matplotlib import pyplot as plt
+
+from torch_geometric import utils
 from torch_geometric.nn.conv import GCNConv
 from torch_geometric.data import InMemoryDataset, Data
 
@@ -191,7 +195,7 @@ class Net:
         except StopIteration:
             self.reset_loader()
             sample_xs, l_ = self.sample_iterator.__next__()
-        # assert x.shape[0] == 1
+        assert x.shape[0] == 1
         logger.info(f"x.shape = {x.shape}")
         logger.info(f"x[:,:10] = {x[:,:10]}")
         logger.info(f"sample_xs.shape = {sample_xs.shape}")
@@ -210,6 +214,7 @@ class Net:
             logger.info(f"one_x.shape = {one_x.shape}")
             logger.info(f"samples_per_x.shape = {samples_per_x.shape}")
             logger.info(f"samples_per_x[:10] for current x = {samples_per_x[:,:10]}")
+            logger.info(f"labels for samples_per_x = {l_[i * self.samples_for_graph : (i + 1) * self.samples_for_graph]}")
             edge_attr = F.softmax(
                 torch.sum(torch.mul(samples_per_x, one_x), axis=1), dim=0
             )
@@ -238,6 +243,9 @@ class Net:
             logger.info(f"edges directed from sample_for_xs to one_x = {edges}")
             # make graph
             g = Data(x=node_features, edge_index=edges, edge_attr=edge_attr)
+            plt.figure(figsize=(10,10))
+            g_nx = utils.to_networkx(g)
+            nx.draw_kamada_kawai(g_nx,with_labels=True)
             logger.info("Graph created from one_x and sample_for_x")
             logger.info(f"graph.x.shape = {g.x.shape}")
             logger.info(f"graph.edge_index.shape = {g.edge_index.shape}")
@@ -295,4 +303,5 @@ class Net:
         loss_info = []
         imgs_batch, labels_batch = self.train_loader.__iter__().__next__()
         img, label = imgs_batch[:1], labels_batch[:1]
+        logger.info(f"label of current x = {label}")
         recon = self.test_forward_run(img)
