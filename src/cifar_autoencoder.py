@@ -2,6 +2,7 @@ import os
 import pickle
 from glob import glob
 from tqdm import tqdm
+from loguru import logger
 
 
 try:
@@ -35,7 +36,7 @@ class CifarDataSet(Dataset):
                 lst_labels.extend(l)
             self.data = np.row_stack(lst_imgs).reshape((-1, 3, 32, 32))
             self.labels = lst_labels
-        elif mode=="sample":
+        elif mode == "sample":
             # return the nth batch for testing
             for fi_path in all_batch_files[-2:-1]:
                 i, l = self.unpickle(fi_path)
@@ -164,7 +165,7 @@ class AutoEncoder(nn.Module):
         return op
 
 
-def train(model, train_loader, num_epochs=5, batch_size=64, learning_rate=1e-3):
+def train(model, device, train_loader, num_epochs=5, batch_size=64, learning_rate=1e-3):
     torch.manual_seed(42)
     criterion = nn.MSELoss()  # mean square error loss
     optimizer = torch.optim.Adam(
@@ -172,9 +173,11 @@ def train(model, train_loader, num_epochs=5, batch_size=64, learning_rate=1e-3):
     )
     outputs = []
     losses = []
+    model = model.to(device)
     for epoch in range(num_epochs):
         for data in tqdm(train_loader):
             img, _ = data
+            img = img.to(device)
             recon = model(img)
             loss = criterion(recon, img)
             loss.backward()

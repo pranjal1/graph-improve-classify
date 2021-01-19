@@ -47,7 +47,9 @@ class Net:
         use_graph=True,
         seed=None,
     ):
-        self.encoder_model = encoder_model
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        logger.info(f"Using {self.device}")
+        self.encoder_model = encoder_model.to(self.device)
         self.keep_prob = keep_prob
         self.train_batch_size = train_batch_size
         self.samples_for_graph = samples_for_graph
@@ -67,12 +69,12 @@ class Net:
             # make a model that predicts the edges between the nodes
             self.edge_linear = torch.nn.Linear(
                 encoder_model.encoding_dimension, encoder_model.encoding_dimension
-            )
+            ).to(self.device)
 
             self.gconv = GCNConv(
                 in_channels=encoder_model.encoding_dimension,
                 out_channels=encoder_model.encoding_dimension,
-            )
+            ).to(self.device)
             self.reset_loader()
         else:
             logger.info("Will not use graph to augment features")
@@ -96,7 +98,7 @@ class Net:
             nn.Dropout(p=self.keep_prob),
             nn.BatchNorm1d(num_features=1024),
             nn.Linear(in_features=1024, out_features=10),
-        )
+        ).to(self.device)
         self.num_epochs = num_epochs
         self.learning_rate = learning_rate
 
@@ -126,6 +128,7 @@ class Net:
         _all_enc_embeddings = []
         _all_enc_labels = []
         for data, label in tqdm(_dl):
+            data, label = data.to(self.device), label.to(self.device)
             embedding = self.encoder_model.encoder(data).flatten(
                 start_dim=1
             )  # check if flatten will work
@@ -156,10 +159,14 @@ class Net:
                 self.edge_linear.train()
         if self.use_graph:
             try:
-                sample_xs, l_ = self.sample_iterator.__next__()
+                sample_xs, l_ = [
+                    x_.to(self.device) for x_ in self.sample_iterator.__next__()
+                ]
             except StopIteration:
                 self.reset_loader()
-                sample_xs, l_ = self.sample_iterator.__next__()
+                sample_xs, l_ = [
+                    x_.to(self.device) for x_ in self.sample_iterator.__next__()
+                ]
             sample_xs = self.edge_linear(sample_xs)
             x = self.edge_linear(x)
             all_graphs = []
@@ -201,10 +208,14 @@ class Net:
 
     def test_forward_run(self, x):
         try:
-            sample_xs, l_ = self.sample_iterator.__next__()
+            sample_xs, l_ = [
+                x_.to(self.device) for x_ in self.sample_iterator.__next__()
+            ]
         except StopIteration:
             self.reset_loader()
-            sample_xs, l_ = self.sample_iterator.__next__()
+            sample_xs, l_ = [
+                x_.to(self.device) for x_ in self.sample_iterator.__next__()
+            ]
         assert x.shape[0] == 1
         logger.info(f"x.shape = {x.shape}")
         logger.info(f"x[:,:10] = {x[:,:10]}")
@@ -286,6 +297,7 @@ class Net:
         logger.info("Passing the augmented x through the dense layers")
         self.denselayers.eval()
         pred = self.denselayers(aggregated_x)
+        logger.info(f"device used -> {pred.device}")
         logger.info(f"Shape of prediction after dense layers = {pred.shape}")
         logger.info(f"Prediction after dense layers = {pred}")
 
@@ -298,6 +310,7 @@ class Net:
             epoch_loss = []
             for data in tqdm(self.train_loader):
                 img, label = data
+                img, label = img.to(self.device), label.to(self.device)
                 recon = self.forward(img)
                 l = self.criterion(recon, label)
                 l.backward()
@@ -312,6 +325,6 @@ class Net:
     def sanity_test(self):
         loss_info = []
         imgs_batch, labels_batch = self.train_loader.__iter__().__next__()
-        img, label = imgs_batch[:1], labels_batch[:1]
+        img, label = imgs_batch[:1].to(self.device), labels_batch[:1].to(self.device)
         logger.info(f"label of current x = {label}")
         recon = self.test_forward_run(img)
