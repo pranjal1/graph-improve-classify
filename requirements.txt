@@ -1,5 +1,4 @@
 tqdm
-glob
 loguru
 matplotlib
 numpy
