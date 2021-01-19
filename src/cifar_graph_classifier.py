@@ -143,7 +143,17 @@ class Net:
     def reset_loader(self):
         self.sample_iterator = iter(self.sample_loader)
 
-    def forward(self, x):
+    def forward(self, x, is_train=True):
+        if not is_train:
+            self.denselayers.eval()
+            if self.use_graph:
+                self.gconv.eval()
+                self.edge_linear.eval()
+        else:
+            self.denselayers.train()
+            if self.use_graph:
+                self.gconv.train()
+                self.edge_linear.train()
         if self.use_graph:
             try:
                 sample_xs, l_ = self.sample_iterator.__next__()
@@ -158,8 +168,8 @@ class Net:
                     i * self.samples_for_graph : (i + 1) * self.samples_for_graph
                 ]
                 one_x = x[i : i + 1]
-                edge_attr = F.softmax(
-                    torch.sum(torch.mul(samples_per_x, one_x), axis=1), dim=0
+                edge_attr = F.sigmoid(
+                    torch.sum(torch.mul(samples_per_x, one_x), axis=1)
                 )
                 node_features = torch.cat([samples_per_x, one_x])
                 num_nodes = len(edge_attr)  # count start from 0
@@ -214,10 +224,10 @@ class Net:
             logger.info(f"one_x.shape = {one_x.shape}")
             logger.info(f"samples_per_x.shape = {samples_per_x.shape}")
             logger.info(f"samples_per_x[:10] for current x = {samples_per_x[:,:10]}")
-            logger.info(f"labels for samples_per_x = {l_[i * self.samples_for_graph : (i + 1) * self.samples_for_graph]}")
-            edge_attr = F.softmax(
-                torch.sum(torch.mul(samples_per_x, one_x), axis=1), dim=0
+            logger.info(
+                f"labels for samples_per_x = {l_[i * self.samples_for_graph : (i + 1) * self.samples_for_graph]}"
             )
+            edge_attr = F.sigmoid(torch.sum(torch.mul(samples_per_x, one_x), axis=1))
             logger.info(
                 f"shape of edge attribute from one_x and sample_for_x = {edge_attr.shape}"
             )
@@ -243,9 +253,9 @@ class Net:
             logger.info(f"edges directed from sample_for_xs to one_x = {edges}")
             # make graph
             g = Data(x=node_features, edge_index=edges, edge_attr=edge_attr)
-            plt.figure(figsize=(10,10))
+            plt.figure(figsize=(10, 10))
             g_nx = utils.to_networkx(g)
-            nx.draw_kamada_kawai(g_nx,with_labels=True)
+            nx.draw_kamada_kawai(g_nx, with_labels=True)
             logger.info("Graph created from one_x and sample_for_x")
             logger.info(f"graph.x.shape = {g.x.shape}")
             logger.info(f"graph.edge_index.shape = {g.edge_index.shape}")
