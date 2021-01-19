@@ -204,7 +204,7 @@ def train(
             optimizer.zero_grad()
             losses.append([epoch, float(loss)])
         print(f"Saving model for epoch {epoch+1}")
-        torch.save(model, f"{model_save_dir}/model_{epoch+1}.pth")
+        torch.save(model.state_dict(), f"{model_save_dir}/model_{epoch+1}.pth")
         print("Epoch:{}, Loss:{:.4f}".format(epoch + 1, float(loss)))
         outputs.append((epoch, img, recon),)
     return outputs, losses
