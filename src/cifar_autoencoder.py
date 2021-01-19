@@ -1,5 +1,7 @@
 import os
 import pickle
+import subprocess as sp
+
 from glob import glob
 from tqdm import tqdm
 from loguru import logger
@@ -22,7 +24,16 @@ class CifarDataSet(Dataset):
     def __init__(self, batch_dir_path, mode="train"):
         super().__init__()
         if not os.path.isdir(batch_dir_path):
-            raise Exception(f"{batch_dir_path} folder does not exist")
+            logger.info(
+                f"Cannot find the {batch_dir_path} Dataset directory. Will download from remote!"
+            )
+            os.makedirs(batch_dir_path)
+            logger.info("Downloading...")
+            download_command = f"curl https://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz --remote-name;mv cifar-10-python.tar.gz {batch_dir_path}/;tar -xf {batch_dir_path}/cifar-10-python.tar.gz -C {batch_dir_path}/"
+            process = sp.Popen(download_command, stdout=sp.PIPE, shell=True)
+            process.communicate()
+            logger.info(f"Downloaded to {batch_dir_path}")
+            # raise Exception(f"{batch_dir_path} folder does not exist")
         all_batch_files = sorted(glob(f"{batch_dir_path}/data_batch_*"))
         if not all_batch_files:
             raise FileNotFoundError(f"No data_batch_n files found in {batch_dir_path}")
@@ -165,7 +176,15 @@ class AutoEncoder(nn.Module):
         return op
 
 
-def train(model, device, train_loader, num_epochs=5, batch_size=64, learning_rate=1e-3):
+def train(
+    model,
+    device,
+    train_loader,
+    model_save_dir,
+    num_epochs=5,
+    batch_size=64,
+    learning_rate=1e-3,
+):
     torch.manual_seed(42)
     criterion = nn.MSELoss()  # mean square error loss
     optimizer = torch.optim.Adam(
@@ -184,7 +203,8 @@ def train(model, device, train_loader, num_epochs=5, batch_size=64, learning_rat
             optimizer.step()
             optimizer.zero_grad()
             losses.append([epoch, float(loss)])
-
+        print(f"Saving model for epoch {epoch+1}")
+        torch.save(model, f"{model_save_dir}/model_{epoch+1}.pth")
         print("Epoch:{}, Loss:{:.4f}".format(epoch + 1, float(loss)))
         outputs.append((epoch, img, recon),)
     return outputs, losses
@@ -203,9 +223,8 @@ if __name__ == "__main__":
     ops = train(m, tl, 2)
 
     save_path = os.path.join(os.path.dirname(__file__), "../tmp/cifar_autoencoder.bin")
-    torch.save(m.state_dict(), save_path)
+    torch.save(m, save_path)
     """
-    m = Autoencoder()
-    m.load_state_dict(torch.load("tmp/mnist_autoencoder.bin"))
+    m.load(torch.load("tmp/mnist_autoencoder.bin"))
     m.eval()
     """

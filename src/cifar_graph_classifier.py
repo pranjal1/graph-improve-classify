@@ -39,6 +39,7 @@ class Net:
         encoder_model,
         sample_dataset,
         train_dataset,
+        model_save_dir,
         keep_prob=0.7,
         num_epochs=5,
         learning_rate=1e-3,
@@ -49,6 +50,7 @@ class Net:
     ):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         logger.info(f"Using {self.device}")
+        self.model_save_dir = model_save_dir
         self.encoder_model = encoder_model.to(self.device)
         self.keep_prob = keep_prob
         self.train_batch_size = train_batch_size
@@ -328,3 +330,7 @@ class Net:
         img, label = imgs_batch[:1].to(self.device), labels_batch[:1].to(self.device)
         logger.info(f"label of current x = {label}")
         recon = self.test_forward_run(img)
+
+    def save_model(self, epoch):
+        logger.info(f"Saving model for epoch {epoch+1}")
+        torch.save(self.model, f"{self.model_save_dir}/model_{epoch+1}.pth")
