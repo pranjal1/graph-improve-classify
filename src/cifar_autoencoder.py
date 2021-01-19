@@ -34,7 +34,7 @@ class CifarDataSet(Dataset):
             process.communicate()
             logger.info(f"Downloaded to {batch_dir_path}")
             # raise Exception(f"{batch_dir_path} folder does not exist")
-        all_batch_files = sorted(glob(f"{batch_dir_path}/data_batch_*"))
+        all_batch_files = sorted(glob(f"{batch_dir_path}/cifar-10-batches-py/data_batch_*"))
         if not all_batch_files:
             raise FileNotFoundError(f"No data_batch_n files found in {batch_dir_path}")
 
