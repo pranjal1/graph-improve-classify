@@ -4,4 +4,3 @@ matplotlib
 numpy
 torch
 networkx
-torch_geometric
