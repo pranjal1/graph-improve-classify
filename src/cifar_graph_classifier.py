@@ -135,8 +135,10 @@ class Net:
                 start_dim=1
             )  # check if flatten will work
             # found that the Graph only takes 1D tensor as node feature
-            _all_enc_embeddings.append(embedding.to("cpu"))
+            _all_enc_embeddings.append(embedding)
             _all_enc_labels.append(label)
+            del data
+            del label
         _all_enc_embeddings = torch.cat(_all_enc_embeddings).detach()
         _all_enc_labels = torch.cat(_all_enc_labels).detach()
         # dataset from the new embeddings
