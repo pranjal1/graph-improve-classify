@@ -130,7 +130,7 @@ class Net:
         _all_enc_embeddings = []
         _all_enc_labels = []
         for data, label in tqdm(_dl):
-            data, label = data.to(self.device), label.to(self.device)
+            # data, label = data.to(self.device), label.to(self.device)
             embedding = self.encoder_model.encoder(data).flatten(
                 start_dim=1
             )  # check if flatten will work
