@@ -34,7 +34,10 @@ class CifarDataSet(Dataset):
             process.communicate()
             logger.info(f"Downloaded to {batch_dir_path}")
             # raise Exception(f"{batch_dir_path} folder does not exist")
-        all_batch_files = sorted(glob(f"{batch_dir_path}/cifar-10-batches-py/data_batch_*"))
+        all_batch_files = sorted(
+            glob(f"{batch_dir_path}/cifar-10-batches-py/data_batch_*")
+        )
+        print(f"{batch_dir_path}/cifar-10-batches-py/data_batch_*")
         if not all_batch_files:
             raise FileNotFoundError(f"No data_batch_n files found in {batch_dir_path}")
 
@@ -193,18 +196,24 @@ def train(
     outputs = []
     losses = []
     model = model.to(device)
-    for epoch in range(num_epochs):
-        for data in tqdm(train_loader):
-            img, _ = data
-            img = img.to(device)
-            recon = model(img)
-            loss = criterion(recon, img)
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-            losses.append([epoch, float(loss)])
-        print(f"Saving model for epoch {epoch+1}")
-        torch.save(model.state_dict(), f"{model_save_dir}/model_{epoch+1}.pth")
+    try:
+        for epoch in range(num_epochs):
+            for data in tqdm(train_loader):
+                img, _ = data
+                img = img.to(device)
+                recon = model(img)
+                loss = criterion(recon, img)
+                loss.backward()
+                optimizer.step()
+                optimizer.zero_grad()
+                losses.append([epoch, float(loss)])
+            print(f"Saving model for epoch {epoch+1}")
+            torch.save(model.state_dict(), f"{model_save_dir}/model_{epoch+1}.pth")
+            print("Epoch:{}, Loss:{:.4f}".format(epoch + 1, float(loss)))
+            outputs.append((epoch, img, recon),)
+    except KeyboardInterrupt:
+        print(f"Got KeyboardInterrupt! Saving model for epoch {epoch+1}")
+        torch.save(model.state_dict(), f"{model_save_dir}/model_{epoch+1}__interrupt.pth")
         print("Epoch:{}, Loss:{:.4f}".format(epoch + 1, float(loss)))
         outputs.append((epoch, img, recon),)
     return outputs, losses
