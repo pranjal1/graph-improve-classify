@@ -6,8 +6,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 
+import numpy as np
 import networkx as nx
 from matplotlib import pyplot as plt
+from scipy.metrics import classification_report
 
 from torch_geometric import utils
 from torch_geometric.nn.conv import GCNConv
@@ -39,6 +41,7 @@ class Net:
         encoder_model,
         sample_dataset,
         train_dataset,
+        test_dataset,
         model_save_dir,
         keep_prob=0.7,
         num_epochs=5,
@@ -57,6 +60,7 @@ class Net:
         self.samples_for_graph = samples_for_graph
         self.use_graph = use_graph
         self.train_dataset = train_dataset
+        self.test_dataset = test_dataset
 
         if self.use_graph:
             logger.info("Will use graph to augment features")
@@ -167,7 +171,7 @@ class Net:
                     i * self.samples_for_graph : (i + 1) * self.samples_for_graph
                 ]
                 one_x = x[i : i + 1]
-                edge_attr = F.sigmoid(
+                edge_attr = torch.sigmoid(
                     torch.sum(torch.mul(samples_per_x, one_x), axis=1)
                 )
                 node_features = torch.cat([samples_per_x, one_x])
@@ -178,7 +182,7 @@ class Net:
                         [num_nodes for _ in range(len(edge_attr))],
                     ],
                     dtype=torch.long,
-                )
+                ).to(self.device)
                 # make graph
                 g = Data(x=node_features, edge_index=edges, edge_attr=edge_attr)
                 all_graphs.append(g)
@@ -340,10 +344,40 @@ class Net:
                     self.optimizer.zero_grad()
                     epoch_loss.append(float(l))
                 loss_info.append(epoch_loss)
-                self.save_model(epoch + 1)
+                # self.save_model(epoch + 1)
         except KeyboardInterrupt:
             logger.info("Keyboard Interrupt. Stopping the training!")
-            self.save_model(epoch + 1)
+            # self.save_model(epoch + 1)
+        return loss_info
+
+    def evaluate(self, return_report=True):
+        predictions, targets = [], []
+        try:
+            test_iterator = self.reset_loader(
+                self.test_dataset, batch_size=self.train_batch_size, shuffle=True
+            )
+            for data in tqdm(test_iterator):
+                img, label = data
+                _test_ds = CustomDataset(img, label)
+                # dataloader with user defined batch size
+                img, label = (
+                    DataLoader(
+                        _test_ds, batch_size=self.train_batch_size, shuffle=True,
+                    )
+                    .__iter__()
+                    .__next__()
+                )
+                recon = self.forward(img.to(self.device), False)
+                preds = np.argmax(recon.cpu().detach().numpy(), axis=1)
+                label = label.cpu().detach().numpy()
+                predictions.append(preds)
+                targets.append(label)
+            predictions, targets = [np.hstack(predictions), np.hstack(targets)]
+        except KeyboardInterrupt:
+            logger.info("Keyboard Interrupt. Stopping the evaluation!")
+        if return_report:
+            return classification_report(targets, predictions)
+        return predictions, targets
 
     def sanity_test(self):
         loss_info = []
@@ -358,13 +392,3 @@ class Net:
         img, label = imgs_batch[:1].to(self.device), labels_batch[:1].to(self.device)
         logger.info(f"label of current x = {label}")
         recon = self.test_forward_run(img)
-
-    def save_model(self, epoch, interrupted=False):
-        if not interrupted:
-            logger.info(f"Saving model for epoch {epoch+1}")
-            torch.save(self.model, f"{self.model_save_dir}/model_{epoch+1}.pth")
-        else:
-            logger.info(f"Saving model for epoch {epoch+1} interrupted by user")
-            torch.save(
-                self.model, f"{self.model_save_dir}/model_{epoch+1}__interrupted.pth"
-            )
