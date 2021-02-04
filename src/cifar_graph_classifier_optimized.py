@@ -9,7 +9,7 @@ from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import networkx as nx
 from matplotlib import pyplot as plt
-from scipy.metrics import classification_report
+from sklearn.metrics import classification_report
 
 from torch_geometric import utils
 from torch_geometric.nn.conv import GCNConv
