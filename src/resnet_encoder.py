@@ -32,7 +32,7 @@ class ResnetEncoder(nn.Module):
         return _op.shape[-1]
 
     def _preprocess_batch(self, x):
-        x_transformed = x.numpy().reshape(-1, 3, 32, 32).transpose(0, 2, 3, 1)
+        x_transformed = x.cpu().numpy().reshape(-1, 3, 32, 32).transpose(0, 2, 3, 1)
         x_pil = [Image.fromarray(np.uint8(x)).convert("RGB") for x in x_transformed]
         x_pil_processed = [self.preprocess(x) for x in x_pil]
         return torch.stack(x_pil_processed)
