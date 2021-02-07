@@ -130,7 +130,11 @@ class Net:
         _dl = DataLoader(ds, batch_size=batch_size)
         for data, label in _dl:
             data, label = data.to(self.device), label.to(self.device)
-            embedding = self.encoder_model.encoder(data).flatten(start_dim=1).detach()
+            embedding = (
+                self.encoder_model.encoder(data, self.device)
+                .flatten(start_dim=1)
+                .detach()
+            )
             label = label.detach()
             yield embedding, label
 
