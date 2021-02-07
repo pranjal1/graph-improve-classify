@@ -43,6 +43,7 @@ class Net:
         train_dataset,
         test_dataset,
         model_save_dir,
+        layers_hidden_units,
         keep_prob=0.7,
         num_epochs=5,
         learning_rate=1e-3,
@@ -61,6 +62,7 @@ class Net:
         self.use_graph = use_graph
         self.train_dataset = train_dataset
         self.test_dataset = test_dataset
+        self.layers_hidden_units = layers_hidden_units
 
         if self.use_graph:
             logger.info("Will use graph to augment features")
@@ -77,26 +79,8 @@ class Net:
         else:
             logger.info("Will not use graph to augment features")
 
-        self.denselayers = nn.Sequential(
-            # nn.Flatten(), #already flattened
-            nn.Linear(in_features=1024, out_features=128),
-            nn.ReLU(),
-            nn.Dropout(p=self.keep_prob),
-            nn.BatchNorm1d(num_features=128),
-            nn.Linear(in_features=128, out_features=256),
-            nn.ReLU(),
-            nn.Dropout(p=self.keep_prob),
-            nn.BatchNorm1d(num_features=256),
-            nn.Linear(in_features=256, out_features=512),
-            nn.ReLU(),
-            nn.Dropout(p=self.keep_prob),
-            nn.BatchNorm1d(num_features=512),
-            nn.Linear(in_features=512, out_features=1024),
-            nn.ReLU(),
-            nn.Dropout(p=self.keep_prob),
-            nn.BatchNorm1d(num_features=1024),
-            nn.Linear(in_features=1024, out_features=10),
-        ).to(self.device)
+        self.denselayers = nn.Sequential(*self.get_layers()).to(self.device)
+
         self.num_epochs = num_epochs
         self.learning_rate = learning_rate
 
@@ -115,6 +99,28 @@ class Net:
             self.trainables, lr=learning_rate, weight_decay=1e-5
         )
         self.seed = seed
+
+    def get_layers(self,):
+        layers_list = []
+        for clu, nlu in zip(
+            self.layers_hidden_units[:-1], self.layers_hidden_units[1:-1]
+        ):
+            layers_list.extend(
+                [
+                    nn.Linear(in_features=clu, out_features=nlu),
+                    nn.ReLU(),
+                    nn.Dropout(p=self.keep_prob),
+                    nn.BatchNorm1d(num_features=nlu),
+                ]
+            )
+
+        layers_list.append(
+            nn.Linear(
+                in_features=self.layers_hidden_units[-2],
+                out_features=self.layers_hidden_units[-1],
+            ),
+        )
+        return layers_list
 
     def get_encoding(self, ds, batch_size, shuffle=False):
         if not ds.__class__.__name__ == "CifarDataSet":

@@ -13,7 +13,7 @@ class ResnetEncoder(nn.Module):
             "pytorch/vision:v0.6.0", "resnet18", pretrained=True
         )
         self.model.eval()
-        self.features = nn.Sequential(*list(self.model.children())[:-2])
+        self.features = nn.Sequential(*list(self.model.children())[:-1])
         self.preprocess = transforms.Compose(
             [
                 transforms.Resize(256),
