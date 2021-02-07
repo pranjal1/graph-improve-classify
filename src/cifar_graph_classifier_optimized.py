@@ -319,10 +319,11 @@ class Net:
     def train(self):
         if self.seed:
             torch.manual_seed(self.seed)
-        self.sample_iterator = self.reset_loader(
-            self.sample_dataset,
-            batch_size=self.train_batch_size * self.samples_for_graph,
-        )
+        if self.use_graph:
+            self.sample_iterator = self.reset_loader(
+                self.sample_dataset,
+                batch_size=self.train_batch_size * self.samples_for_graph,
+            )
         loss_info = []
         try:
             for epoch in range(self.num_epochs):
