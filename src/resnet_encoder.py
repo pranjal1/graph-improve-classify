@@ -6,6 +6,28 @@ import torch.nn as nn
 from torchvision import transforms
 
 
+import subprocess
+
+
+def get_gpu_memory_map():
+    """Get the current gpu usage.
+
+    Returns
+    -------
+    usage: dict
+        Keys are device ids as integers.
+        Values are memory usage as integers in MB.
+    """
+    result = subprocess.check_output(
+        ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,nounits,noheader"],
+        encoding="utf-8",
+    )
+    # Convert lines into a dictionary
+    gpu_memory = [int(x) for x in result.strip().split("\n")]
+    gpu_memory_map = dict(zip(range(len(gpu_memory)), gpu_memory))
+    return gpu_memory_map
+
+
 class ResnetEncoder(nn.Module):
     def __init__(self, layer_from_last: int):
         super(ResnetEncoder, self).__init__()
@@ -41,4 +63,8 @@ class ResnetEncoder(nn.Module):
         return self.model(self._preprocess_batch(x))
 
     def encoder(self, x, device="cpu"):
-        return self.features(self._preprocess_batch(x, device)).flatten(start_dim=1)
+        try:
+            return self.features(self._preprocess_batch(x, device)).flatten(start_dim=1)
+        except:
+            print(get_gpu_memory_map())
+            assert 1 == 2
